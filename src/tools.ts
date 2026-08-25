@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { zodToJsonSchema } from 'zod-to-json-schema';
 import Anthropic from '@anthropic-ai/sdk';
 import { getTableSchema, runExplainAnalyze } from './db.js';
 import { searchCodebase } from './codeSearch.js';
@@ -60,7 +59,7 @@ export const tools: Tool[] = [querySchemaTool, runExplainTool, searchCodebaseToo
 export const toolDefinitions: Anthropic.Tool[] = tools.map((tool) => ({
   name: tool.name,
   description: tool.description,
-  input_schema: zodToJsonSchema(tool.schema) as Anthropic.Tool.InputSchema,
+  input_schema: z.toJSONSchema(tool.schema) as Anthropic.Tool.InputSchema,
 }));
 
 export async function executeTool(name: string, rawInput: unknown): Promise<string> {
