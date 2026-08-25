@@ -1,5 +1,78 @@
-export function main(): void {
-  console.log('db-diagnostic-agent');
+import 'dotenv/config';
+import Anthropic from '@anthropic-ai/sdk';
+import { toolDefinitions, executeTool } from './tools.js';
+
+const anthropic = new Anthropic();
+
+const SYSTEM_PROMPT = `You are a database diagnostic agent. Your job is to investigate a slow or
+problematic query and find the root cause, then give a concrete recommendation.
+
+Process:
+1. Understand the table structure involved (query_schema)
+2. Run EXPLAIN ANALYZE on the query to see the actual execution plan (run_explain)
+3. Form a hypothesis (e.g. "missing index on user_id causes a sequential scan")
+4. If it would help, find where in the codebase this query is triggered from (search_codebase),
+   so your recommendation can point to a specific file/location
+5. Give a final, specific recommendation — not generic advice
+
+Use tools as many times as needed. Stop investigating once you have enough information
+to give a confident, specific recommendation — don't call tools unnecessarily.`;
+
+async function runAgent(userQuery: string) {
+  const messages: Anthropic.MessageParam[] = [{ role: 'user', content: userQuery }];
+
+  while (true) {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      system: SYSTEM_PROMPT,
+      tools: toolDefinitions,
+      messages,
+    });
+
+    messages.push({ role: 'assistant', content: response.content });
+
+    if (response.stop_reason !== 'tool_use') {
+      // model is done — print final text response
+      const textBlock = response.content.find((b) => b.type === 'text');
+      if (textBlock && textBlock.type === 'text') {
+        console.log('\n=== Final report ===\n');
+        console.log(textBlock.text);
+      }
+      break;
+    }
+
+    // model wants to use tool(s) — execute each and feed results back
+    const toolUseBlocks = response.content.filter((b) => b.type === 'tool_use');
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+
+    for (const block of toolUseBlocks) {
+      console.log(`\n🔧 Calling tool: ${block.name}(${JSON.stringify(block.input)})`);
+      try {
+        const result = await executeTool(block.name, block.input);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: result,
+        });
+      } catch (err) {
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: block.id,
+          content: `Error: ${(err as Error).message}`,
+          is_error: true,
+        });
+      }
+    }
+
+    messages.push({ role: 'user', content: toolResults });
+  }
 }
 
-main();
+const query = process.argv[2];
+if (!query) {
+  console.error('Usage: tsx src/index.ts "why is the orders query slow?"');
+  process.exit(1);
+}
+
+await runAgent(query);
