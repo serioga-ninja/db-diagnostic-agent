@@ -11,7 +11,7 @@ const server = new McpServer({
 for (const tool of tools) {
   server.registerTool(
     tool.name,
-    { title: tool.name, description: tool.description, inputSchema: tool.schema.shape },
+    { title: tool.name, description: tool.description, inputSchema: tool.schema },
     async (input) => {
       const result = await tool.execute(input);
       return { content: [{ type: 'text', text: result }] };
