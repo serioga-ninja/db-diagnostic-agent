@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import Anthropic from '@anthropic-ai/sdk';
 import { toolDefinitions, executeTool } from './tools.js';
 
@@ -69,10 +70,45 @@ async function runAgent(userQuery: string) {
   }
 }
 
-const query = process.argv[2];
-if (!query) {
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks).toString('utf-8').trim();
+}
+
+function printUsage() {
   console.error('Usage: tsx src/index.ts "why is the orders query slow?"');
+  console.error('   or: tsx src/index.ts --file query.txt');
+  console.error('   or: cat query.txt | tsx src/index.ts');
+}
+
+async function resolveQuery(): Promise<string> {
+  const args = process.argv.slice(2);
+  const fileFlagIndex = args.findIndex((a) => a === '--file' || a === '-f');
+
+  if (fileFlagIndex !== -1) {
+    const filePath = args[fileFlagIndex + 1];
+    if (!filePath) {
+      console.error('Error: --file requires a path argument');
+      process.exit(1);
+    }
+    return readFileSync(filePath, 'utf-8').trim();
+  }
+
+  if (args[0]) {
+    return args[0];
+  }
+
+  if (!process.stdin.isTTY) {
+    const stdinQuery = await readStdin();
+    if (stdinQuery) return stdinQuery;
+  }
+
+  printUsage();
   process.exit(1);
 }
 
+const query = await resolveQuery();
 await runAgent(query);

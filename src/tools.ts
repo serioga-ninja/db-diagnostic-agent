@@ -53,8 +53,21 @@ const searchCodebaseTool = defineTool({
   },
 });
 
+const readFileTool = defineTool({
+  name: "read_file",
+  description:
+    "Read the full contents of a specific file, to see complete context around a query found via search_codebase (e.g. when a query spans multiple lines or you need to see the full function).",
+  schema: z.object({
+    filePath: z.string().describe("Path to the file, as returned by search_codebase"),
+  }),
+  execute: async (input) => {
+    const fs = await import("fs/promises");
+    return await fs.readFile(input.filePath, "utf-8");
+  },
+});
+
 // this is the ONLY place you touch to add a new tool
-export const tools: Tool[] = [querySchemaTool, runExplainTool, searchCodebaseTool];
+export const tools: Tool[] = [querySchemaTool, runExplainTool, searchCodebaseTool, readFileTool];
 
 export const toolDefinitions: Anthropic.Tool[] = tools.map((tool) => ({
   name: tool.name,
